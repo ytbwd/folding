@@ -46,8 +46,8 @@ void OrigamiFold::preprocess(std::vector<SpringVertex*>& pts)
 	 assignFacesOgmPoints(pts); 
      }
      findNextFoldingAngle(); 
-     for (int i = 0; i < creases_.size(); i++) 
-	  creases_[i]->updateRotMatrix(rho_delta[i]); 
+     for (int i = 0; i < cp.creases_.size(); i++) 
+	  cp.creases_[i]->updateRotMatrix(rho_delta[i]); 
      for (auto it : faces_) 
           it->updateFoldingMatrix(); 
 }
@@ -110,11 +110,11 @@ double OrigamiFold::targetFunction(
 {
     double ans = 0;
     
-    for (size_t i = 0; i < creases_.size(); i++) {
-         creases_[i]->updateRotMatrix(x[i]); 
+    for (size_t i = 0; i < cp.creases_.size(); i++) {
+         cp.creases_[i]->updateRotMatrix(x[i]); 
     }
     Nvvertex* nvId; 
-    for (auto it : vertices_) {
+    for (auto it : cp.vertices_) {
          if (!it->judgeNonVirtual()) continue; 
          Nvvertex* nv = static_cast<Nvvertex*>(it); 
 
@@ -137,6 +137,8 @@ void OrigamiFold::findNextFoldingAngle()
     const int maxIter = 5000;
     static int iter = 0;
     bool success = false;
+    std::ofstream fout(outname+"/angle.txt", 
+            std::ofstream::out | std::ofstream::app);
 
     while (!success && iter++ < maxIter)
     {
@@ -183,6 +185,7 @@ void OrigamiFold::findNextFoldingAngle()
                 std::cout << "Folding process is terminated" << std::endl; 
                 m_t = 0; 
             }
+            fout << rho_delta << std::endl; 
         }
         else
         {
@@ -219,10 +222,13 @@ void OrigamiFold:: setVel(SpringVertex* sv)
 {
     std::vector<double> new_crds(3, 0);
     ogmComputeNewPosition(sv, new_crds);
+    for (int i = 0; i < 3; i++)
+         sv->x[i] = new_crds[i];
+    /*
     double* vel = sv->getVel();
     for (int i = 0; i < 3; ++i)
         vel[i] = (new_crds[i] - sv->getCoords()[i])/getTimeStepSize();
-
+    */
 }
 
 void OrigamiFold::setAccel(SpringVertex*){}
@@ -245,7 +251,7 @@ Drag* OrigamiFold::clone(const Info & info)
                   << "insufficient data is given"
                   << std::endl;
     }
-
+    
     std::vector<double> v = info.data();
     size_t n_pt = (size_t)v[0];
     size_t n_crs = (size_t)v[1];
@@ -305,20 +311,21 @@ Drag* OrigamiFold::clone(const Info & info)
         it++;
     }
     optAlgoType = (int)*it; 
-    return new OrigamiFold(points, cen, typeIdx, faces, creases, mappings, 
-        angles, optAlgoType);
+    return new OrigamiFold(info.outname, points, cen, typeIdx, faces, 
+            creases, mappings, angles, optAlgoType);
 }
 
 OrigamiFold::OrigamiFold(): m_opt(NULL), stepSize(0), wplus(0), wminus(0) {}
 
-OrigamiFold::OrigamiFold(const std::vector<std::vector<double>>& points,
+OrigamiFold::OrigamiFold(std::string str, 
+                         const std::vector<std::vector<double>>& points,
                          const std::vector<double>& cen, 
                          const std::vector<int>& typeIdx, 
 			 const std::vector<std::vector<int>>& fs, 
                          const std::vector<std::pair<int, int>>& creases,
                          const std::vector<std::vector<int>>& mappings, 
                          const std::vector<double>& angles, int optAlgoType) :
-                        stepSize(0.015), wplus(0.2), wminus(0.01)
+                         outname(str), stepSize(0.015), wplus(0.2), wminus(0.01)
 {
     m_t = 3.0;
     m_opt = NULL;
@@ -334,27 +341,27 @@ OrigamiFold::OrigamiFold(const std::vector<std::vector<double>>& points,
     rho_delta.resize(N, 0);
     rho_tau.resize(N);
     rho_T.reserve(N);
-    vertices_.resize(points.size()); 
+    cp.vertices_.resize(points.size()); 
     for (int i = 0; i < points.size(); i++) 
-	 vertices_[i] = NULL;  
+	 cp.vertices_[i] = NULL;  
     for (size_t i = 0; i < creases.size(); ++i)
     {
         int vindex = creases[i].first;
         int pindex = creases[i].second;
 
-        if (vertices_[vindex] == NULL)
-            vertices_[vindex] = new Nvvertex(points[vindex], vindex);
-	if (vertices_[pindex] == NULL) 
-	    vertices_[pindex] = new Vertex(points[pindex], pindex); 
+        if (cp.vertices_[vindex] == NULL)
+            cp.vertices_[vindex] = new Nvvertex(points[vindex], vindex);
+	if (cp.vertices_[pindex] == NULL) 
+	    cp.vertices_[pindex] = new Vertex(points[pindex], pindex); 
 
-        creases_.push_back(new Crease(vertices_[vindex], vertices_[pindex], 
+        cp.creases_.push_back(new Crease(cp.vertices_[vindex], cp.vertices_[pindex], 
             vindex, pindex, angles[i]));
     }
     for (size_t i = 0; i < points.size(); i++) {
-         if (vertices_[i] == NULL) 
-             vertices_[i] = new Vertex(points[i], i); 
+         if (cp.vertices_[i] == NULL) 
+             cp.vertices_[i] = new Vertex(points[i], i); 
     }
-    for (auto it : creases_)
+    for (auto it : cp.creases_)
          rho_T.push_back(it->getRotAngle()); 
     faces_.reserve(fs.size());
     for (size_t i = 0; i < fs.size(); i++) {
@@ -362,10 +369,10 @@ OrigamiFold::OrigamiFold(const std::vector<std::vector<double>>& points,
          std::vector<Crease*> tempFaceCrease(mappings[i].size()); 
          
          for (int j = 0; j < mappings[i].size(); j++)
-              tempFaceCrease[j] = creases_[mappings[i][j]];
-	// tempFaceCrease.push_back(creases_[i]); 
+              tempFaceCrease[j] = cp.creases_[mappings[i][j]];
+	// tempFaceCrease.push_back(cp.creases_[i]); 
 	 for (size_t j = 0; j < fs[i].size(); j++) 
-	      tempFaceVertex[j] = vertices_[fs[i][j]]; 
+	      tempFaceVertex[j] = cp.vertices_[fs[i][j]]; 
          switch (typeIdx[i]) {
             case origamiSurface::FACEONEARC: 
 	        faces_.push_back(new FaceOneArc(tempFaceVertex, 
@@ -375,14 +382,14 @@ OrigamiFold::OrigamiFold(const std::vector<std::vector<double>>& points,
                 faces_.push_back(new Polygon(tempFaceVertex, tempFaceCrease)); 
          }
     }
-    for (auto it : vertices_) {
+    for (auto it : cp.vertices_) {
          if (!it->judgeNonVirtual()) continue; 
 
          Nvvertex* nv = static_cast<Nvvertex*>(it); 
 
          for (int i = 0; i < creases.size(); i++) 
               if (creases[i].first == nv->getIdx())
-                  nv->insertCrease(creases_[i]);         
+                  nv->insertCrease(cp.creases_[i]);         
     }
     optAlgoType_ = optAlgoType; 
 }
@@ -412,9 +419,9 @@ OrigamiFold::~OrigamiFold() {
         delete this->m_opt;
         this->m_opt = NULL;
     }
-    for (auto v : vertices_)
+    for (auto v : cp.vertices_)
          delete v; 
-    for (auto c : creases_) 
+    for (auto c : cp.creases_) 
          delete c; 
     for (auto f : faces_) 
          delete f; 
@@ -433,7 +440,7 @@ Crease::Crease(Vertex* v1, Vertex* v2, int idx1, int idx2, double rho) {
 
 void Crease::calRotMatrix(double rho) {
     double a = dir(0), b = dir(1), c = dir(2);
-    arma::vec v = v2_->getCoords(); 
+    arma::vec v = v1_->getCoords(); 
     double x = v(0), y = v(1), z = v(2);
     arma::mat T(4, 4, arma::fill::eye);
     

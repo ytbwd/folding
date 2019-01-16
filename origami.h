@@ -148,6 +148,7 @@ class OrigamiFold : public Drag
     const double wplus;
     const double wminus;
     double weight = 0.8;
+    std::string outname; 
 public:
     void preprocess(std::vector<SpringVertex*>&);
     void postprocess(std::vector<SpringVertex*>&);
@@ -155,7 +156,7 @@ public:
     void updateVel(std::vector<SpringVertex*>& pts, double t) {}
     void setAccel(SpringVertex*);
     std::string id() {return "OrigamiDrag";}
-    OrigamiFold(const std::vector<std::vector<double>>&,
+    OrigamiFold(std::string outname, const std::vector<std::vector<double>>&,
                 const std::vector<double>&, const std::vector<int>&,
 		const std::vector<std::vector<int>>&,
                 const std::vector<std::pair<int, int>>&,
@@ -166,9 +167,15 @@ public:
     size_t dataSize();
 private:
     bool first = true;
-    std::vector<Vertex*> vertices_;
-    std::vector<Crease*> creases_; 
-    std::vector<Face*> faces_; 
+    struct CreasePattern {
+        std::vector<Vertex*> vertices_;
+        std::vector<Crease*> creases_; 
+        CreasePattern() {} 
+        CreasePattern(std::vector<Vertex*> v, std::vector<Crease*> c) : 
+                      vertices_(v), creases_(c) {}
+    };
+    std::vector<Face*> faces_;
+    CreasePattern cp; 
     std::vector<double> rho, rho_delta, rho_tau, rho_T;
     nlopt::opt *m_opt = NULL;
     void assignFacesOgmPoints(std::vector<SpringVertex*>&); 
